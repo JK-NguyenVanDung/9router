@@ -1,6 +1,7 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { isClaudeOverUsageLimit, getClaudeLimitResetAt } from "@/lib/claudeUsageLimiter";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -44,11 +45,56 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
+    let availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
     });
+
+    if (providerId === "claude" && availableConnections.length > 0) {
+      const usageEligibleConnections = [];
+      const usageBlockedConnections = [];
+
+      for (const connection of availableConnections) {
+        if (!connection.accessToken) {
+          usageEligibleConnections.push(connection);
+          continue;
+        }
+
+        const overUsageLimit = await isClaudeOverUsageLimit(connection.id, connection.accessToken);
+        if (overUsageLimit) {
+          const resetAt = getClaudeLimitResetAt(connection.id, connection.accessToken);
+          usageBlockedConnections.push({ connection, resetAt });
+          continue;
+        }
+
+        usageEligibleConnections.push(connection);
+      }
+
+      availableConnections = usageEligibleConnections;
+
+      if (usageBlockedConnections.length > 0) {
+        usageBlockedConnections.forEach(({ connection, resetAt }) => {
+          const connName = connection.displayName || connection.name || connection.email || connection.id?.slice(0, 8);
+          log.debug("AUTH", `  → ${connName} | claude5h>=85%${resetAt ? ` until ${resetAt}` : ""}`);
+        });
+      }
+
+      if (availableConnections.length === 0 && usageBlockedConnections.length > 0) {
+        const earliestReset = usageBlockedConnections
+          .map((item) => item.resetAt)
+          .filter(Boolean)
+          .sort()[0] || null;
+
+        return {
+          allRateLimited: true,
+          retryAfter: earliestReset,
+          retryAfterHuman: earliestReset ? formatRetryAfter(earliestReset) : "retry after reset",
+          lastError: "Claude 5-hour usage reached 85% cap",
+          lastErrorCode: 429
+        };
+      }
+    }
 
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {

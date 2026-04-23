@@ -6,6 +6,7 @@ const nextConfig = {
     unoptimized: true
   },
   env: {},
+  turbopack: {},
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {

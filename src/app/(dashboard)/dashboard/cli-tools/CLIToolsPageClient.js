@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, MitmLinkCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, MitmLinkCard, ModelRulesCard } from "./components";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -29,13 +29,30 @@ export default function CLIToolsPageClient({ machineId }) {
   const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
+  const [modelRules, setModelRules] = useState({});
+  const [modelRecommendations, setModelRecommendations] = useState({});
 
   useEffect(() => {
     fetchConnections();
     loadCloudSettings();
     fetchApiKeys();
     fetchAllStatuses();
+    fetchModelRules();
   }, []);
+
+  
+  const fetchModelRules = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/model-rules");
+      if (res.ok) {
+        const data = await res.json();
+        setModelRules(data.parsed || {});
+        setModelRecommendations(data.recommendations || {});
+      }
+    } catch (error) {
+      console.log("Error fetching model rules:", error);
+    }
+  };
 
   const fetchAllStatuses = async () => {
     try {
@@ -156,6 +173,8 @@ export default function CLIToolsPageClient({ machineId }) {
       onToggle: () => setExpandedTool(expandedTool === toolId ? null : toolId),
       baseUrl: getBaseUrl(),
       apiKeys,
+      modelRules,
+      modelRecommendations,
     };
 
     switch (toolId) {
@@ -192,6 +211,7 @@ export default function CLIToolsPageClient({ machineId }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <ModelRulesCard />
       <div className="flex flex-col gap-4">
         {regularTools.map(([toolId, tool]) => renderToolCard(toolId, tool))}
       </div>

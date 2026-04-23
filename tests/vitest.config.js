@@ -9,12 +9,11 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["**/*.test.js"],
-    // Suppress noisy console output from handlers under test
     silent: false,
   },
   resolve: {
     alias: {
-      // Resolve open-sse/* imports to the actual local package
+      "@": resolve(__dirname, "../src"),
       "open-sse": resolve(__dirname, "../open-sse"),
       // Resolve @/* imports to src directory
       "@": resolve(__dirname, "../src"),
